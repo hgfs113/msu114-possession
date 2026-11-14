@@ -73,7 +73,7 @@ They cover missing observations, RTS resets, goalkeeper-side correction, tempora
 - `possession/ownership.py`, `context.py`, `cameras.py`: team evidence and temporal decoding.
 - `possession/activity/`: physical pseudo-labels, balanced logistic regression and binary HMM.
 - `possession/__main__.py`: reproducible export.
-- [Technical report](TECHNICAL_REPORT.md): method, input requirements and limitations.
+- [Technical report (PDF)](msu114.pdf): method, input requirements and limitations. [Markdown source](TECHNICAL_REPORT.md).
 
 ## Attribution
 
