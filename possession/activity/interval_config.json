@@ -1,0 +1,7 @@
+{
+  "family": "seeded_logistic",
+  "l2": 0.1,
+  "bias": 0,
+  "enter": 15,
+  "leave": 15
+}
