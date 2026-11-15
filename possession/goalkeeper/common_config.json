@@ -1,0 +1,9 @@
+{
+  "family": "frozen",
+  "audio_weight": 16,
+  "restart_policy": "strict",
+  "heuristic": "tags",
+  "heuristic_weight": 2,
+  "enter": 15,
+  "leave": 15
+}

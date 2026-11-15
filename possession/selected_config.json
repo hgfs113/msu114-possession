@@ -1,0 +1,13 @@
+{
+  "name": "rs008",
+  "detector": "contact",
+  "speed": 2.5,
+  "retirement": "tags",
+  "base_config": {
+    "mode": "soft",
+    "anchor": "carry",
+    "require_release": true,
+    "gate": "context",
+    "weight": 6
+  }
+}

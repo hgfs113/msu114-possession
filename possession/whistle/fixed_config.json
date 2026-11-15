@@ -1,0 +1,14 @@
+{
+  "version": "full-scan-paired-tone-v3",
+  "revision": "V3.1",
+  "profile": {
+    "carrier_hz": 3765.625,
+    "gap_hz": 460.9375,
+    "carrier_tolerance_hz": 180.0,
+    "gap_tolerance_hz": 80.0
+  },
+  "config": {
+    "threshold_db": 16,
+    "support_seconds": 0.12
+  }
+}

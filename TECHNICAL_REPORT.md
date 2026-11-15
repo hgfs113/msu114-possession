@@ -1,51 +1,109 @@
-# msu114 — Tracking-based team possession inference
+# msu114 - Tracking and audio possession inference
 
-## Objective and inference inputs
+## 1. Objective and runtime inputs
 
-The system assigns H (Barcelona), A (Athletic Club), D (dead ball), or X (outside the evaluation blocks) to each of the 199,319 tactical-video frames. It is an offline algorithm operating at a nominal 25 FPS.
+The offline system assigns H (Barcelona), A (Athletic Club), D (dead ball) or X
+(outside the evaluation blocks) to each of 199,319 tactical-video frames at
+25 FPS. Runtime inputs are automatic tracking and metadata from both cameras,
+their homographies, tactical Smart Tagging and the tactical MP4 audio track.
+No video-pixel model or player-name database is used.
 
-Runtime inputs are the supplied automatic tracking and metadata for both cameras, their homographies, and tactical Smart Tagging. No video pixels, audio, player-name database or external pretrained model is required. Both cameras have their own frame counters; broadcast indices are mapped to the tactical timeline geometrically.
+## 2. Geometry and team ownership
 
-## Tracking and control evidence
+Coordinates are converted to metres on a 105.3 x 68 m pitch. A fixed goalkeeper
+role hypothesis mirrors X for slots 24 and 46 when they appear on the opposite
+defending half; sides reverse at halftime. It preserves Y and missing values.
+Slots are not treated as persistent player identities.
 
-Coordinates are converted to metres using the supplied 105.3 × 68 m pitch dimensions. Track slots are not treated as persistent player identities. Missing coordinates remain missing for the purpose of confirming observed contact.
+Adaptive constant-velocity Kalman filtering and RTS smoothing estimate positions
+and velocities. Gap extrapolation is bounded and halftime resets the state.
+Observed close control requires distance at most 1 m, relative speed at most
+3 m/s, an advantage of at least 0.5 m over the opponent and three observed
+consecutive frames. Predicted coordinates alone cannot confirm a contact.
 
-A fixed match-specific goalkeeper-role configuration mirrors X when slots 24 or 46 appear on the opposite defending half; sides reverse at halftime. This is a geometric hypothesis, not recovered ground truth. It preserves Y and missing values, and does not clamp forward runs to the penalty area.
+Control, weaker proximity, tactical phase cues, camera reliability and selective
+broadcast evidence form a temporal team-ownership path. Cross-camera matching
+uses geometry rather than player IDs. A fixed H/A fallback supplies a team when
+the subsequent activity model declares play live.
 
-An adaptive constant-velocity Kalman filter and Rauch–Tung–Striebel smoother estimate positions and velocities. Short extrapolation is bounded; large discontinuities and halftime reset the motion state. A close-control event requires distance at most 1 m, relative speed at most 3 m/s, an advantage of at least 0.5 m over the nearest opponent, and three consecutive observed frames. Synthetic gap predictions alone cannot establish control.
+## 3. Physical and acoustic activity evidence
 
-## Team ownership
+Eighteen features describe visibility, gaps, ball and player movement, preparation
+and restart context, boundary position, contact, contest, phase, broadcast
+visibility, pressure, tempo and geometric quality. The logistic fitting procedure
+uses automatically generated physical LIVE/DEAD seeds from those features,
+balanced class weights, L2=0.1 and 300 deterministic optimisation steps.
+The fitted coefficients are held fixed while the restart features are updated.
 
-Strong observed-control evidence is combined with weaker nearest-team geometry. Rapid ball motion reduces ordinary proximity evidence. Automatic attacking/defending phases provide a small, reliability-weighted team cue, particularly when direct control is ambiguous. Correlated phase tags are normalized. Set-piece windows and sufficiently observed slow player movement provide activity context.
+Audio is extracted as mono PCM16 at 16 kHz. A 2048-sample Hann-window spectrum
+with 320-sample hop searches for a pair of tones around 3765.625 Hz with a
+460.9375 Hz separation. Local prominence, frequency stability and duration
+produce automatic whistle proposals. The fixed minimum prominence is 16 dB;
+minimum supported duration is 0.12 s. Long continuous tones are rejected.
+A proposal is acoustic evidence, not proof that the referee stopped play.
 
-Homography validity and reprojection error moderate the reliability of observations. Broadcast control is added conservatively when tactical close control is absent. Correspondences require team-shape agreement, consistent neighboring time offsets, valid camera geometry and local rechecking; player-slot identities are not matched across cameras. Missing broadcast observations do not by themselves imply dead ball.
+A context-dependent acoustic signal supports stopping after live play or
+restarting after established dead ball. Its fixed weight is 16. Preparation
+and restart context contributes an additional weight of 2. Both halves use the
+same settings and binary HMM switching costs of 15 in either direction.
 
-Team evidence is aggregated at 5 Hz, smoothed over a short centered window and decoded separately per half with an H/A/D HMM. A fixed H/A-only path supplies a team where that first path predicts D and the subsequent activity model instead predicts live play.
+## 4. Goalkeeper reception, holding and release
 
-## Separate LIVE/DEAD model
+The goalkeeper module looks for an observed incoming ball, a projected arrival
+just before a short occlusion, or compatible ball/keeper movement. Reception and
+holding must connect to an observed outward release. Keeper location, nearby
+field players, boundary evidence, new stopping cues and goal-kick preparation
+constrain the episode. It is capped at 45 s and ends on loss of keeper evidence,
+ball observation elsewhere, a stop cue or standard preparation.
 
-Eighteen team-neutral features summarize ball visibility and gap duration, ball motion/stillness, player motion, set-piece preparation and restart cues, boundary position, contact and contest, phase activity, broadcast visibility, movement toward the ball, tempo change and camera quality.
+An accepted chain lowers the DEAD evidence by up to 6 and assigns possession to
+the goalkeeper's team when the activity decoder selects LIVE. Separate standard
+preparation evidence raises DEAD evidence. This is a tracking-based hypothesis;
+it is not visual recognition of a ball in the keeper's hands.
 
-The logistic-regression training procedure creates physical pseudo-labels automatically from these inputs. Convincing moving-ball/moving-player periods away from set pieces and boundary exits supply LIVE seeds. Slow-player set-piece preparation with a still or absent ball, or observed boundary exits with slow players, supplies DEAD seeds. These are noisy algorithmic labels, not manual annotations. No labelled dataset is loaded by this fitting procedure.
+## 5. Confirmed restarts and tag retirement
 
-Balanced logistic regression uses L2=0.1 and 300 deterministic optimization steps. Its smoothed emission is decoded with a binary HMM using symmetric switching costs of 15. The resulting dead-ball mask is applied to the fixed ownership path. Configuration files specify the remaining constants. Scores are evidence values, not calibrated correctness probabilities.
+Within each SET PIECES window the system looks for movement after a mostly
+quiet or unobserved two-second period. The final configuration uses a 2.5 m/s
+motion threshold and selects the first candidate confirmed by nearby contact,
+at least 3 m of measured displacement along a connected trajectory, continued
+motion and plausible field position. Confirmation can use up to 3 s of future
+observations. Tracking gaps and implausible jumps cannot themselves confirm a pass.
 
-## Output and limitations
+After confirmation, preparation and set-piece activity context are disabled for
+that event, and a three-second restart cue is placed at the detected boundary.
+Overlapping tags remain independent. The acoustic signal and goalkeeper evidence
+stay fixed in this configuration; the HMM still makes the final LIVE/DEAD decision.
 
-The model decodes both halves with added time. Export uses the published evaluation blocks, fills the documented pre-kickoff portion of the second block with D and writes X elsewhere. Data-dependent corrections and predictions are generated by code; the CSV is not edited after inference.
+## 6. Possession conventions and limitations
 
-Limitations include track-slot identity switches, unobserved contacts, possible broadcast replays or alignment errors, planar projection of airborne balls, and imperfect automatic tactical tags. Stationary or missing balls do not uniquely identify a stoppage. The goalkeeper-role configuration is match-specific. Centered smoothing can suppress brief possession changes; this is not a real-time system.
+A missing ball is not automatically dead. Loose-ball team ownership follows the
+temporal control path. Brief challenges can be smoothed away; observed proximity
+is not necessarily established control. Keeper holding is treated as live control
+when the reception/release chain and activity decision support it. Standard
+preparation remains dead evidence until the restart mechanism closes it.
 
-This document describes the fixed inference and pseudo-label fitting procedure. It does not provide an independent accuracy estimate or certify competition eligibility.
+The system can confuse ball handling before a restart with actual play, miss a
+new stoppage within a broad tag window, lose a keeper reception under occlusion,
+or merge brief opponent possessions. Camera timing, replays, slot switches and
+planar projection of airborne balls remain limitations. Scores are evidence
+values rather than calibrated probabilities. This document describes runtime
+behaviour; it makes no claim of independent accuracy or competition eligibility.
 
-## Reproduction
+## 7. Reproduction
 
-Use Python 3.11 and the pinned dependencies. From the repository root:
+Use Python 3.11, the pinned requirements and ffmpeg/ffprobe. From the source root:
 
 ```bash
 python -m possession --data-dir /path/to/match-data \
-  --cache-dir /path/to/private-cache --output /path/to/private-output/msu114.csv
-python evaluation/validate_submission.py /path/to/private-output/msu114.csv
+  --tactical-video /path/to/match-data/tactical/BAR-ATH_tactical.mp4 \
+  --cache-dir /path/to/private-cache --output /path/to/output/msu114.csv
+python evaluation/validate_submission.py /path/to/output/msu114.csv
 ```
 
-The repository includes synthetic behavioral tests. No match assets, feature caches or prediction files are distributed with the source. Metrica Sports starter code is used under its retained MIT license.
+Both halves include added time; the halftime interval is excluded. Export fills
+the published pre-kickoff part of the second block with D and uses X outside the
+published blocks. CSV rows are generated by code without subsequent editing.
+Synthetic tests exercise the key behaviours; all data-dependent intermediate
+files stay in the private cache. Starter loaders and evaluation tools originate
+from the Metrica Sports repository under its retained MIT licence.
